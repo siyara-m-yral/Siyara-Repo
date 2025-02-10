@@ -1,0 +1,31 @@
+name: Weekly Estimate vs. Actual Report
+on:
+  schedule:
+    - cron: "0 9 * * FRI"  # Runs every Friday at 9 AM UTC
+
+jobs:
+  generate_report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Completed Issues
+        run: |
+          CLOSED_ISSUES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/issues?state=closed&since=$(date -d '7 days ago' --iso-8601=seconds)")
+          
+          echo "### Weekly Report: Estimate vs. Actual Time" > report.md
+          echo "| Issue | Estimated | Actual |" >> report.md
+          echo "|---|---|---|" >> report.md
+
+          for issue in $(echo "$CLOSED_ISSUES" | jq -r '.[].number'); do
+            ESTIMATED=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/$issue" | jq -r '.body' | grep -oP 'Estimated Time: \K[0-9]+' || echo "N/A")
+            ACTUAL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/$issue" | jq -r '.body' | grep -oP 'Actual Time Spent: \K[0-9]+' || echo "N/A")
+            
+            echo "| #$issue | $ESTIMATED days | $ACTUAL days |" >> report.md
+          done
+
+          curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -d "{\"title\": \"Weekly Time Report\", \"body\": \"$(cat report.md)\"}" \
+          "https://api.github.com/repos/${{ github.repository }}/issues"
