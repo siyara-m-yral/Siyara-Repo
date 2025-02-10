@@ -1,0 +1,33 @@
+name: Track Issue Completion Time
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  calculate_time_spent:
+    if: github.event.label.name == 'Done'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Issue Details
+        id: fetch_issue
+        run: |
+          ISSUE_BODY=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.issue.number }} | jq -r '.body')
+
+          START_TIME=$(echo "$ISSUE_BODY" | grep -oP 'Started At: \K[0-9T:-]+Z' || echo "")
+          echo "start_time=$START_TIME" >> $GITHUB_ENV
+
+      - name: Calculate Duration
+        if: env.start_time != ''
+        run: |
+          START_TIME=${{ env.start_time }}
+          END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          START_SECONDS=$(date -d "$START_TIME" +%s)
+          END_SECONDS=$(date -d "$END_TIME" +%s)
+          DIFF_DAYS=$(( (END_SECONDS - START_SECONDS) / 86400 ))
+
+          curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.issue.number }} \
+          -d "{\"body\": \"${{ github.event.issue.body }}\n\nActual Time Spent: $DIFF_DAYS days\"}"
